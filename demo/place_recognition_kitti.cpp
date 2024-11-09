@@ -3,6 +3,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 
 // Read KITTI data
+///读取KITTI数据集中的激光雷达数据
 std::vector<float> read_lidar_data(const std::string lidar_data_path) {
   std::ifstream lidar_data_file;
   lidar_data_file.open(lidar_data_path,
@@ -55,13 +56,14 @@ int main(int argc, char **argv) {
 
   std::vector<std::pair<Eigen::Vector3d, Eigen::Matrix3d>> poses_vec;
   std::vector<double> times_vec;
+  ///1、读取位姿数据文件
   load_pose_with_time(pose_path, poses_vec, times_vec);
   std::cout << "Sucessfully load pose with number: " << poses_vec.size()
             << std::endl;
 
   STDescManager *std_manager = new STDescManager(config_setting);
 
-  size_t cloudInd = 0;
+  size_t cloudInd = 0;  ///第几帧
   size_t keyCloudInd = 0;
   pcl::PointCloud<pcl::PointXYZI>::Ptr temp_cloud(
       new pcl::PointCloud<pcl::PointXYZI>());
@@ -72,6 +74,7 @@ int main(int argc, char **argv) {
   int triggle_loop_num = 0;
   while (ros::ok()) {
     std::stringstream lidar_data_path;
+    ///读取第cloudInd帧点云到lidar_data中去
     lidar_data_path << lidar_path << std::setfill('0') << std::setw(6)
                     << cloudInd << ".bin";
     std::vector<float> lidar_data = read_lidar_data(lidar_data_path.str());
@@ -82,29 +85,33 @@ int main(int argc, char **argv) {
         new pcl::PointCloud<pcl::PointXYZI>());
     Eigen::Vector3d translation = poses_vec[cloudInd].first;
     Eigen::Matrix3d rotation = poses_vec[cloudInd].second;
-    for (std::size_t i = 0; i < lidar_data.size(); i += 4) {
+    for (std::size_t i = 0; i < lidar_data.size(); i += 4) {///i+=4也是一个下采样吧
       pcl::PointXYZI point;
       point.x = lidar_data[i];
       point.y = lidar_data[i + 1];
       point.z = lidar_data[i + 2];
       point.intensity = lidar_data[i + 3];
+      ///将点转到世界系下，存入current_cloud中去
       Eigen::Vector3d pv = point2vec(point);
       pv = rotation * pv + translation;
       point = vec2point(pv);
       current_cloud->push_back(point);
     }
+    ///下采样的点云仍在current_cloud中
     down_sampling_voxel(*current_cloud, config_setting.ds_size_);
     for (auto pv : current_cloud->points) {
       temp_cloud->points.push_back(pv);
     }
 
     // check if keyframe
+    ///固定间隔帧为关键帧
     if (cloudInd % config_setting.sub_frame_num_ == 0 && cloudInd != 0) {
       std::cout << "Key Frame id:" << keyCloudInd
                 << ", cloud size: " << temp_cloud->size() << std::endl;
       // step1. Descriptor Extraction
       auto t_descriptor_begin = std::chrono::high_resolution_clock::now();
       std::vector<STDesc> stds_vec;
+      ///核心1！！！，根据关键帧点云生成描述子
       std_manager->GenerateSTDescs(temp_cloud, stds_vec);
       auto t_descriptor_end = std::chrono::high_resolution_clock::now();
       descriptor_time.push_back(time_inc(t_descriptor_end, t_descriptor_begin));
@@ -115,6 +122,7 @@ int main(int argc, char **argv) {
       loop_transform.first << 0, 0, 0;
       loop_transform.second = Eigen::Matrix3d::Identity();
       std::vector<std::pair<STDesc, STDesc>> loop_std_pair;
+      ///核心2！！！，回环检测
       if (keyCloudInd > config_setting.skip_near_num_) {
         std_manager->SearchLoop(stds_vec, search_result, loop_transform,
                                 loop_std_pair);
@@ -127,7 +135,8 @@ int main(int argc, char **argv) {
       auto t_query_end = std::chrono::high_resolution_clock::now();
       querying_time.push_back(time_inc(t_query_end, t_query_begin));
 
-      // step3. Add descriptors to the database
+      /// step3. Add descriptors to the database
+      /// 将描述子加到数据库中去
       auto t_map_update_begin = std::chrono::high_resolution_clock::now();
       std_manager->AddSTDescs(stds_vec);
       auto t_map_update_end = std::chrono::high_resolution_clock::now();

@@ -1,10 +1,12 @@
 #include "include/STDesc.h"
+///下采样pl_feat点云，最后输出的点云为每个体素内的均值的点
 void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZI> &pl_feat,
                          double voxel_size) {
   int intensity = rand() % 255;
   if (voxel_size < 0.01) {
     return;
   }
+  ///键为体素位置，值为包含点坐标、强度及点数量的结构体
   std::unordered_map<VOXEL_LOC, M_POINT> voxel_map;
   uint plsize = pl_feat.size();
 
@@ -21,6 +23,7 @@ void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZI> &pl_feat,
     VOXEL_LOC position((int64_t)loc_xyz[0], (int64_t)loc_xyz[1],
                        (int64_t)loc_xyz[2]);
     auto iter = voxel_map.find(position);
+    ///将每个体素内的点归为一个点
     if (iter != voxel_map.end()) {
       iter->second.xyz[0] += p_c.x;
       iter->second.xyz[1] += p_c.y;
@@ -42,6 +45,7 @@ void down_sampling_voxel(pcl::PointCloud<pcl::PointXYZI> &pl_feat,
   pl_feat.resize(plsize);
 
   uint i = 0;
+  ///将刚刚聚成的点求均值
   for (auto iter = voxel_map.begin(); iter != voxel_map.end(); ++iter) {
     pl_feat[i].x = iter->second.xyz[0] / iter->second.count;
     pl_feat[i].y = iter->second.xyz[1] / iter->second.count;
@@ -106,6 +110,7 @@ void read_parameters(ros::NodeHandle &nh, ConfigSetting &config_setting) {
             << std::endl;
 }
 
+///读取类似tum格式的位姿文件将位姿数据和时间戳数据分别保存到poses_vec和times_vec中去
 void load_pose_with_time(
     const std::string &pose_file,
     std::vector<std::pair<Eigen::Vector3d, Eigen::Matrix3d>> &poses_vec,
@@ -309,20 +314,24 @@ void STDescManager::GenerateSTDescs(
     pcl::PointCloud<pcl::PointXYZI>::Ptr &input_cloud,
     std::vector<STDesc> &stds_vec) {
 
-  // step1, voxelization and plane dection
+  /// step1, voxelization and plane dection
+  ///划分为体素，将可以构成平面的初始化一个平面
   std::unordered_map<VOXEL_LOC, OctoTree *> voxel_map;
   init_voxel_map(input_cloud, voxel_map);
   pcl::PointCloud<pcl::PointXYZINormal>::Ptr plane_cloud(
       new pcl::PointCloud<pcl::PointXYZINormal>);
+  ///将所有平面的参数信息保存到plane_cloud中去
   getPlane(voxel_map, plane_cloud);
   // std::cout << "[Description] planes size:" << plane_cloud->size() <<
   // std::endl;
   plane_cloud_vec_.push_back(plane_cloud);
 
-  // step2, build connection for planes in the voxel map
+  /// step2, build connection for planes in the voxel map
+  ///根据体素的法向量构建连接关系
   build_connection(voxel_map);
 
-  // step3, extraction corner points
+  /// step3, extraction corner points
+  /// 角点提取
   pcl::PointCloud<pcl::PointXYZINormal>::Ptr corner_points(
       new pcl::PointCloud<pcl::PointXYZINormal>);
   corner_extractor(voxel_map, input_cloud, corner_points);
@@ -330,7 +339,8 @@ void STDescManager::GenerateSTDescs(
   // std::cout << "[Description] corners size:" << corner_points->size()
   //           << std::endl;
 
-  // step4, generate stable triangle descriptors
+  /// step4, generate stable triangle descriptors
+  /// 根据角点生成三角描述子
   stds_vec.clear();
   build_stdesc(corner_points, stds_vec);
   // std::cout << "[Description] stds size:" << stds_vec.size() << std::endl;
@@ -352,13 +362,15 @@ void STDescManager::SearchLoop(
     loop_result = std::pair<int, double>(-1, 0);
     return;
   }
-  // step1, select candidates, default number 50
+  /// step1, select candidates, default number 50
+  /// 生成候选匹配对，用于初步筛选
   auto t1 = std::chrono::high_resolution_clock::now();
   std::vector<STDMatchList> candidate_matcher_vec;
   candidate_selector(stds_vec, candidate_matcher_vec);
 
   auto t2 = std::chrono::high_resolution_clock::now();
-  // step2, select best candidates from rough candidates
+  /// step2, select best candidates from rough candidates
+  /// 选择最佳候选项
   double best_score = 0;
   unsigned int best_candidate_id = -1;
   unsigned int triggle_candidate = -1;
@@ -433,8 +445,10 @@ void STDescManager::init_voxel_map(
         loc_xyz[j] -= 1.0;
       }
     }
+    ///计算当前点所在体素的位置坐标
     VOXEL_LOC position((int64_t)loc_xyz[0], (int64_t)loc_xyz[1],
                        (int64_t)loc_xyz[2]);
+    ///向每个体素八叉树中加入点
     auto iter = voxel_map.find(position);
     if (iter != voxel_map.end()) {
       voxel_map[position]->voxel_points_.push_back(p_c);
@@ -444,6 +458,7 @@ void STDescManager::init_voxel_map(
       voxel_map[position]->voxel_points_.push_back(p_c);
     }
   }
+  ///iter_list和index用于存储 voxel_map 的迭代器列表以及对应索引，便于后面遍历进行初始化
   std::vector<std::unordered_map<VOXEL_LOC, OctoTree *>::iterator> iter_list;
   std::vector<size_t> index;
   size_t i = 0;
@@ -472,6 +487,7 @@ void STDescManager::build_connection(
   for (auto iter = voxel_map.begin(); iter != voxel_map.end(); iter++) {
     if (iter->second->plane_ptr_->is_plane_) {
       OctoTree *current_octo = iter->second;
+      ///对每个是平面的体素，遍历六个方向上的体素
       for (int i = 0; i < 6; i++) {
         VOXEL_LOC neighbor = iter->first;
         if (i == 0) {
@@ -493,6 +509,7 @@ void STDescManager::build_connection(
           current_octo->connect_[i] = false;
         } else {
           if (!current_octo->is_check_connect_[i]) {
+              //若相邻体素存在，根据near的法向量来判断这两个体素间的connect_
             OctoTree *near_octo = near->second;
             current_octo->is_check_connect_[i] = true;
             int j;
@@ -504,6 +521,7 @@ void STDescManager::build_connection(
             near_octo->is_check_connect_[j] = true;
             if (near_octo->plane_ptr_->is_plane_) {
               // merge near octo
+              ///若两个体素的法向量的接近，连接两个体素
               Eigen::Vector3d normal_diff = current_octo->plane_ptr_->normal_ -
                                             near_octo->plane_ptr_->normal_;
               Eigen::Vector3d normal_add = current_octo->plane_ptr_->normal_ +
@@ -567,6 +585,7 @@ void STDescManager::corner_extractor(
       }
     }
   }
+  ///遍历体素地图中的所有体素，角点仅在不是平面的体素中选取
   for (auto iter = voxel_map.begin(); iter != voxel_map.end(); iter++) {
     if (!iter->second->plane_ptr_->is_plane_) {
       VOXEL_LOC current_position = iter->first;
@@ -596,6 +615,7 @@ void STDescManager::corner_extractor(
                 current_octo->connect_tree_[connect_index]->plane_ptr_->center_;
             std::vector<Eigen::Vector3d> proj_points;
             // proj the boundary voxel and nearby voxel onto adjacent plane
+            ///投影边界体素和邻近体素的点到相邻的平面
             for (auto voxel_inc : voxel_round) {
               VOXEL_LOC connect_project_position = current_position;
               connect_project_position.x += voxel_inc[0];
@@ -633,6 +653,7 @@ void STDescManager::corner_extractor(
               }
             }
             // here do the 2D projection and corner extraction
+            ///投影和角点提取（根据梯度）
             pcl::PointCloud<pcl::PointXYZINormal>::Ptr sub_corner_points(
                 new pcl::PointCloud<pcl::PointXYZINormal>);
             extract_corner(projection_center, projection_normal, proj_points,
@@ -645,8 +666,10 @@ void STDescManager::corner_extractor(
       }
     }
   }
+  ///nms去除非显著角点（根据强度）
   non_maxi_suppression(prepare_corner_points);
 
+  ///只保留最明显的角点
   if (config_setting_.maximum_corner_num_ > prepare_corner_points->size()) {
     corner_points = prepare_corner_points;
   } else {
@@ -941,6 +964,7 @@ void STDescManager::build_stdesc(
   std::vector<int> pointIdxNKNSearch(near_num);
   std::vector<float> pointNKNSquaredDistance(near_num);
   // Search N nearest corner points to form stds.
+  ///对于每个角点，检测最近的N个角点
   for (size_t i = 0; i < corner_points->size(); i++) {
     pcl::PointXYZINormal searchPoint = corner_points->points[i];
     if (kd_tree->nearestKSearch(searchPoint, near_num, pointIdxNKNSearch,
@@ -968,6 +992,7 @@ void STDescManager::build_stdesc(
                           pow(p1.z - p3.z, 2));
           double c = sqrt(pow(p3.x - p2.x, 2) + pow(p3.y - p2.y, 2) +
                           pow(p3.z - p2.z, 2));
+          ///筛选边长在距离范围内的
           if (a > max_dis_threshold || b > max_dis_threshold ||
               c > max_dis_threshold || a < min_dis_threshold ||
               b < min_dis_threshold || c < min_dis_threshold) {
@@ -997,6 +1022,7 @@ void STDescManager::build_stdesc(
             l2 = l3;
             l3 = l_temp;
           }
+          ///这里写错了吧？？？
           if (a > b) {
             temp = a;
             a = b;
@@ -1006,6 +1032,7 @@ void STDescManager::build_stdesc(
             l2 = l_temp;
           }
           // check augnmentation
+          ///将坐标放大1000倍并取整后加入哈希表
           pcl::PointXYZ d_p;
           d_p.x = a * 1000;
           d_p.y = b * 1000;
@@ -1475,6 +1502,7 @@ void OctoTree::init_plane() {
   plane_ptr_->normal_ = Eigen::Vector3d::Zero();
   plane_ptr_->points_size_ = voxel_points_.size();
   plane_ptr_->radius_ = 0;
+  ///计算该体素的中心和协方差矩阵
   for (auto pi : voxel_points_) {
     plane_ptr_->covariance_ += pi * pi.transpose();
     plane_ptr_->center_ += pi;
@@ -1483,12 +1511,13 @@ void OctoTree::init_plane() {
   plane_ptr_->covariance_ =
       plane_ptr_->covariance_ / plane_ptr_->points_size_ -
       plane_ptr_->center_ * plane_ptr_->center_.transpose();
+  ///算特征向量和特征值，这里为什么要用复数啊？？
   Eigen::EigenSolver<Eigen::Matrix3d> es(plane_ptr_->covariance_);
   Eigen::Matrix3cd evecs = es.eigenvectors();
   Eigen::Vector3cd evals = es.eigenvalues();
   Eigen::Vector3d evalsReal;
-  evalsReal = evals.real();
-  Eigen::Matrix3d::Index evalsMin, evalsMax;
+  evalsReal = evals.real();  //提取实部
+  Eigen::Matrix3d::Index evalsMin, evalsMax; //最小和最大特征值的索引
   evalsReal.rowwise().sum().minCoeff(&evalsMin);
   evalsReal.rowwise().sum().maxCoeff(&evalsMax);
   int evalsMid = 3 - evalsMin - evalsMax;
@@ -1499,6 +1528,7 @@ void OctoTree::init_plane() {
     plane_ptr_->radius_ = sqrt(evalsReal(evalsMax));
     plane_ptr_->is_plane_ = true;
 
+    //截距
     plane_ptr_->intercept_ = -(plane_ptr_->normal_(0) * plane_ptr_->center_(0) +
                                plane_ptr_->normal_(1) * plane_ptr_->center_(1) +
                                plane_ptr_->normal_(2) * plane_ptr_->center_(2));
