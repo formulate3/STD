@@ -1136,6 +1136,7 @@ void STDescManager::candidate_selector(
 #endif
   for (size_t i = 0; i < stds_vec.size(); i++) {
     STDesc src_std = stds_vec[i];
+    ///对于当前帧的每个三角描述符
     STDesc_LOC position;
     int best_index = 0;
     STDesc_LOC best_position;
@@ -1161,6 +1162,7 @@ void STDescManager::candidate_selector(
               if (dis < dis_threshold) {
                 dis_match_cnt++;
                 // rough filter with vertex attached info
+                ///根据顶点的强度差异进一步判断
                 double vertex_attach_diff =
                     2.0 *
                     (src_std.vertex_attached_ -
@@ -1207,6 +1209,7 @@ void STDescManager::candidate_selector(
   }
 
   // select candidate according to the matching score
+  ///选前50个分数最高的作为候选帧
   for (int cnt = 0; cnt < config_setting_.candidate_num_; cnt++) {
     double max_vote = 1;
     int max_vote_index = -1;
@@ -1241,6 +1244,7 @@ void STDescManager::candidate_selector(
 }
 
 // Get the best candidate frame by geometry check
+///通过几何验证获得最好的候选帧
 void STDescManager::candidate_verify(
     const STDMatchList &candidate_matcher, double &verify_score,
     std::pair<Eigen::Vector3d, Eigen::Matrix3d> &relative_pose,
@@ -1265,7 +1269,9 @@ void STDescManager::candidate_verify(
     int vote = 0;
     Eigen::Matrix3d test_rot;
     Eigen::Vector3d test_t;
+    ///SVD分解求得这个匹配对的变换
     triangle_solver(single_pair, test_t, test_rot);
+    ///对于每个匹配对的变换，作用于每个匹配对，进行投票
     for (size_t j = 0; j < candidate_matcher.match_list_.size(); j++) {
       auto verify_pair = candidate_matcher.match_list_[j];
       Eigen::Vector3d A = verify_pair.first.vertex_A_;
@@ -1277,6 +1283,7 @@ void STDescManager::candidate_verify(
       double dis_A = (A_transform - verify_pair.second.vertex_A_).norm();
       double dis_B = (B_transform - verify_pair.second.vertex_B_).norm();
       double dis_C = (C_transform - verify_pair.second.vertex_C_).norm();
+      ///变换后xyz轴的距离小于阈值则投一票
       if (dis_A < dis_threshold && dis_B < dis_threshold &&
           dis_C < dis_threshold) {
         vote++;
@@ -1294,6 +1301,7 @@ void STDescManager::candidate_verify(
       max_vote = vote_list[i];
     }
   }
+  ///票数最高且满足条件的视为成功匹配对
   if (max_vote >= 4) {
     auto best_pair = candidate_matcher.match_list_[max_vote_index * skip_len];
     int vote = 0;
@@ -1318,6 +1326,7 @@ void STDescManager::candidate_verify(
         sucess_match_vec.push_back(verify_pair);
       }
     }
+    ///计算平面重合百分比
     verify_score = plane_geometric_verify(
         plane_cloud_vec_.back(),
         plane_cloud_vec_[candidate_matcher.match_id_.second], relative_pose);
