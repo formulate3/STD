@@ -9,7 +9,7 @@
 		name="place_recognition_kitti" 
 		output="screen" 
 	/>
-  <param name="lidar_path" type="string" value = "/media/tkw/slamtwo/dataset/kitti/dataset/sequences/00/velodyne/"/>
+  <param name="lidar_path" type="string" value = "/media/tkw/新加卷/data/KITTI/data_odometry_velodyne/dataset/sequences/00/velodyne/"/>
   <param name="pose_path" type="string" value = "/home/tkw/STD_data/example1/OneDrive_1_2024-10-12/kitti00.txt"/>
 
   <group if="$(arg rviz)">

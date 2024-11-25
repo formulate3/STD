@@ -13,7 +13,7 @@
 		name="pgo_demo" 
 		output="screen" 
 	/>
-  <param name="lidar_path" type="string" value = "/media/tkw/slamtwo/dataset/kitti/dataset/sequences/00/velodyne/"/>
+  <param name="lidar_path" type="string" value = "/media/tkw/新加卷/data/KITTI/data_odometry_velodyne/dataset/sequences/00/velodyne/"/>
   <param name="pose_path" type="string" value = "/home/tkw/STD_data/example3/OneDrive_1_2024-10-16/kitti00_pose_lio.txt"/>
 
 

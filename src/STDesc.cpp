@@ -1326,7 +1326,7 @@ void STDescManager::candidate_verify(
         sucess_match_vec.push_back(verify_pair);
       }
     }
-    ///计算平面重合百分比
+    ///计算平面重合度
     verify_score = plane_geometric_verify(
         plane_cloud_vec_.back(),
         plane_cloud_vec_[candidate_matcher.match_id_.second], relative_pose);
